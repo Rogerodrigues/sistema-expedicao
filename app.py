@@ -7,7 +7,7 @@ from datetime import datetime
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Sistema de Rotas & Expedição", layout="wide")
 
-# Arquivo onde o histórico eterno será salvo
+# Arquivo onde o histórico eterno será salvo (Local por enquanto)
 ARQUIVO_HISTORICO = 'historico_geral.csv'
 
 # --- 2. CARREGAR OS DADOS DE ROTAS (FIXO) ---
@@ -50,142 +50,154 @@ ARARUAMA - ROTA 35 - PRAIA SECA"""
 
 df_rotas = pd.read_csv(StringIO(csv_data), sep=";")
 
-# --- 3. FUNÇÕES AUXILIARES ---
+# --- 3. INICIALIZAÇÃO DE VARIÁVEIS DE ESTADO ---
+if 'df_input' not in st.session_state:
+    st.session_state.df_input = pd.DataFrame(columns=['DATA_HORA', 'BR', 'AT', 'GAIOLA ORIGEM', 'BAIRRO CABEÇA', 'GAIOLA DESTINO', 'AT DESTINO'])
+if 'df_romaneio' not in st.session_state:
+    st.session_state.df_romaneio = None
+
+# --- 4. FUNÇÕES AUXILIARES ---
 
 def processar_bipe():
-    """Lê o código bipado, busca no Romaneio (se existir) e adiciona na tabela."""
-    codigo_bipe = st.session_state.scanner_input.strip() # Remove espaços extras
+    """Lê o código bipado, busca no Romaneio e adiciona na tabela."""
+    codigo_bipe = st.session_state.scanner_input.strip()
     
     if codigo_bipe:
-        # Valores padrão (vazios) caso não encontre no romaneio
         at_found = ''
         gaiola_origem_found = ''
         bairro_found = ''
         
-        # Lógica de Busca no Romaneio (Cruzamento de Dados)
-        if 'df_romaneio' in st.session_state and st.session_state.df_romaneio is not None:
-            # Converte para string para garantir a comparação
+        # Busca no Romaneio
+        if st.session_state.df_romaneio is not None:
             df_search = st.session_state.df_romaneio
-            
-            # Tenta encontrar a linha onde a coluna 'BR' é igual ao código bipado
-            # (Assumindo que o CSV do romaneio tem uma coluna chamada 'BR')
+            # Garante que ambos sejam string para comparar
             match = df_search[df_search['BR'].astype(str).str.strip() == codigo_bipe]
             
             if not match.empty:
-                # Se achou, pega os dados. 
-                # OBS: Ajuste os nomes abaixo ('AT', 'GAIOLA', etc) se o seu CSV tiver nomes diferentes
                 try:
                     at_found = match.iloc[0]['AT'] if 'AT' in match.columns else ''
                     gaiola_origem_found = match.iloc[0]['GAIOLA ORIGEM'] if 'GAIOLA ORIGEM' in match.columns else ''
                     bairro_found = match.iloc[0]['BAIRRO CABEÇA'] if 'BAIRRO CABEÇA' in match.columns else ''
-                    # Feedback visual rápido
-                    st.toast(f"BR Encontrado! Bairro: {bairro_found}", icon="✅")
-                except Exception as e:
-                    st.toast(f"Erro ao ler colunas do romaneio: {e}", icon="⚠️")
+                    st.toast(f"✅ BR Encontrado: {bairro_found}")
+                except:
+                    pass
             else:
-                st.toast("BR não encontrado no Romaneio atual.", icon="⚠️")
+                st.toast("⚠️ BR não consta no Romaneio carregado.")
 
-        # Cria o registro novo
         novo_registro = {
             'DATA_HORA': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             'BR': codigo_bipe,
             'AT': at_found,
             'GAIOLA ORIGEM': gaiola_origem_found,
             'BAIRRO CABEÇA': bairro_found,
-            'GAIOLA DESTINO': '', # Geralmente preenchido na hora
-            'AT DESTINO': ''      # Geralmente preenchido na hora
+            'GAIOLA DESTINO': '',
+            'AT DESTINO': ''
         }
         
-        # Adiciona no topo do DataFrame
         st.session_state.df_input = pd.concat([pd.DataFrame([novo_registro]), st.session_state.df_input], ignore_index=True)
-        
-        # Limpa o campo
         st.session_state.scanner_input = ""
 
 def salvar_historico():
     if not st.session_state.df_input.empty:
         header_mode = not os.path.exists(ARQUIVO_HISTORICO)
         st.session_state.df_input.to_csv(ARQUIVO_HISTORICO, mode='a', header=header_mode, index=False, encoding='utf-8')
-        st.success(f"{len(st.session_state.df_input)} registros salvos no Histórico Geral!")
+        st.success(f"{len(st.session_state.df_input)} registros salvos no Histórico!")
         st.session_state.df_input = pd.DataFrame(columns=['DATA_HORA', 'BR', 'AT', 'GAIOLA ORIGEM', 'BAIRRO CABEÇA', 'GAIOLA DESTINO', 'AT DESTINO'])
     else:
-        st.warning("A tabela está vazia.")
+        st.warning("Tabela vazia.")
 
-# --- 4. BARRA LATERAL (UPLOADS E BUSCA) ---
+# --- 5. BARRA LATERAL ---
 with st.sidebar:
-    st.title("⚙️ Configurações")
+    st.title("🚛 Expedição")
+    st.markdown("---")
     
-    # --- UPLOAD DO ROMANEIO ---
-    st.header("📂 Upload do Romaneio")
-    st.info("Suba o CSV com colunas: BR, AT, GAIOLA ORIGEM, BAIRRO CABEÇA")
-    uploaded_file = st.file_uploader("Escolha o arquivo CSV", type="csv")
-    
+    # Upload do Romaneio
+    st.header("📂 1. Carregar Romaneio")
+    uploaded_file = st.file_uploader("Arquivo CSV (BR, AT, GAIOLA...)", type="csv")
     if uploaded_file is not None:
         try:
-            # Lê o arquivo. Sep=";" é padrão BR, mas se der erro mude para ","
-            df_romaneio = pd.read_csv(uploaded_file, sep=";", dtype=str)
-            st.session_state.df_romaneio = df_romaneio
-            st.success(f"Romaneio carregado: {len(df_romaneio)} linhas.")
-        except Exception as e:
-            st.error(f"Erro ao ler arquivo: {e}")
-    else:
-        st.session_state.df_romaneio = None
+            st.session_state.df_romaneio = pd.read_csv(uploaded_file, sep=";", dtype=str)
+            st.success(f"Romaneio: {len(st.session_state.df_romaneio)} volumes.")
+        except:
+            st.error("Erro no arquivo. Verifique se é CSV separado por ponto e vírgula.")
 
-    st.divider()
-
-    # --- BUSCADOR DE ROTAS ---
-    st.header("🔍 Buscador de Rotas")
-    termo_busca = st.text_input("Filtrar Bairro/Cidade:", "")
+    st.markdown("---")
+    
+    # Buscador
+    st.header("🔍 2. Consultar Rota")
+    termo_busca = st.text_input("Bairro ou Cidade:", "")
     if termo_busca:
         resultado = df_rotas[df_rotas['ROTA'].str.contains(termo_busca, case=False, na=False)]
     else:
         resultado = df_rotas
     st.dataframe(resultado, hide_index=True, use_container_width=True)
 
-# --- 5. TELA PRINCIPAL ---
-st.title("🚛 Controle de Expedição Inteligente")
+# --- 6. TELA PRINCIPAL & DASHBOARD ---
 
-# Status do Romaneio
-if 'df_romaneio' in st.session_state and st.session_state.df_romaneio is not None:
-    st.success("🟢 Sistema conectado ao Romaneio. Bipagem automática ativa.")
+# --- DASHBOARD SUPERIOR (Novidade!) ---
+st.markdown("### 📊 Painel de Controle em Tempo Real")
+col1, col2, col3, col4 = st.columns(4)
+
+total_bipados = len(st.session_state.df_input)
+total_meta = len(st.session_state.df_romaneio) if st.session_state.df_romaneio is not None else 0
+pendentes = total_meta - total_bipados if total_meta > 0 else 0
+
+# Calcula % apenas se tiver meta
+if total_meta > 0:
+    progresso = min(total_bipados / total_meta, 1.0)
 else:
-    st.warning("🔴 Nenhum Romaneio carregado. O preenchimento será manual.")
+    progresso = 0.0
 
-aba_operacao, aba_historico = st.tabs(["📋 Operação (Scan)", "🗄️ Histórico Completo"])
+col1.metric("📦 Volumes Bipados", total_bipados)
+col2.metric("🎯 Meta (Romaneio)", total_meta)
+col3.metric("⚠️ Pendentes", max(pendentes, 0))
+col4.metric("🚀 Progresso", f"{progresso*100:.1f}%")
 
-with aba_operacao:
-    st.markdown("### Área de Bipagem")
+st.progress(progresso)
+st.divider()
+
+# --- ABAS DE OPERAÇÃO ---
+aba_scan, aba_pendencia, aba_historico = st.tabs(["🔫 Operação (Scan)", "⚠️ Relatório de Faltas", "🗄️ Histórico Geral"])
+
+# ABA 1: SCAN
+with aba_scan:
+    st.markdown("#### Bipagem")
+    st.text_input("Bipe aqui:", key="scanner_input", on_change=processar_bipe)
     
-    # Campo de Scan com auto-submit
-    st.text_input(
-        "Bipe o código aqui (ENTER automático):", 
-        key="scanner_input", 
-        on_change=processar_bipe
-    )
-
-    st.divider()
+    st.markdown("#### Conferência Atual")
+    df_editado = st.data_editor(st.session_state.df_input, num_rows="dynamic", use_container_width=True, key="editor")
     
-    if 'df_input' not in st.session_state:
-        st.session_state.df_input = pd.DataFrame(columns=['DATA_HORA', 'BR', 'AT', 'GAIOLA ORIGEM', 'BAIRRO CABEÇA', 'GAIOLA DESTINO', 'AT DESTINO'])
+    st.button("✅ Consolidar Lote no Histórico", on_click=salvar_historico, type="primary")
 
-    st.markdown("### Conferência")
-    # Tabela editável
-    df_editado = st.data_editor(
-        st.session_state.df_input,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="editor_dados"
-    )
+# ABA 2: RELATÓRIO DE FALTAS (Novidade!)
+with aba_pendencia:
+    st.markdown("### 🕵️ O que falta bipar?")
+    
+    if st.session_state.df_romaneio is not None:
+        # Lógica de Conjuntos para achar a diferença
+        # Converte tudo para string e remove espaços para garantir match
+        todos_brs = set(st.session_state.df_romaneio['BR'].astype(str).str.strip())
+        bipados_brs = set(st.session_state.df_input['BR'].astype(str).str.strip())
+        
+        # Quem está no Romaneio MAS NÃO está nos Bipados
+        faltantes = todos_brs - bipados_brs
+        
+        if len(faltantes) > 0:
+            st.error(f"Faltam {len(faltantes)} volumes do Romaneio!")
+            # Filtra o dataframe original para mostrar os detalhes dos faltantes
+            df_faltantes = st.session_state.df_romaneio[st.session_state.df_romaneio['BR'].astype(str).str.strip().isin(faltantes)]
+            st.dataframe(df_faltantes, use_container_width=True)
+        else:
+            st.success("Parabéns! Tudo o que estava no Romaneio foi bipado.")
+    else:
+        st.info("Carregue um Romaneio na barra lateral para ver as pendências.")
 
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        st.button("✅ Salvar no Histórico", on_click=salvar_historico, type="primary")
-
+# ABA 3: HISTÓRICO
 with aba_historico:
-    st.markdown("### Histórico Geral")
+    st.markdown("### 🗄️ Banco de Dados Local")
     if os.path.exists(ARQUIVO_HISTORICO):
         df_hist = pd.read_csv(ARQUIVO_HISTORICO)
         st.dataframe(df_hist, use_container_width=True)
-        st.download_button("📥 Baixar Histórico (CSV)", df_hist.to_csv(index=False).encode('utf-8'), 'historico.csv', 'text/csv')
+        st.download_button("📥 Baixar CSV Completo", df_hist.to_csv(index=False).encode('utf-8'), 'historico_completo.csv', 'text/csv')
     else:
-        st.write("Histórico vazio.")
+        st.write("Ainda não há histórico salvo.")
