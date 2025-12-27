@@ -1,203 +1,215 @@
 import streamlit as st
 import pandas as pd
-from io import StringIO
 import os
 from datetime import datetime
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Sistema de Rotas & Expedição", layout="wide")
+st.set_page_config(page_title="Controle de Rota Mista", layout="wide")
 
-# Arquivo onde o histórico eterno será salvo (Local por enquanto)
-ARQUIVO_HISTORICO = 'historico_geral.csv'
+# Mensagem de verificação no log
+print("App Iniciado V4.1...")
 
-# --- 2. CARREGAR OS DADOS DE ROTAS (FIXO) ---
-csv_data = """ROTA
-CABO FRIO - ROTA 1 - CENTRO - PASSAGEM - VILA NOVA - PORTINHO - NOVO PORTINHO - JD EXCELSIOR - ALGODOAL - SÃO BENTO
-CABO FRIO - ROTA 2 - BRAGA - SÃO CRISTÓVÃO - GUARANI - MANOEL CORREIA - RECANTO DAS DUNAS - VILA DO SOL- FOGUETE
-CABO FRIO - ROTA 3 - JD CAIÇARA - JD OLINDA - PRAIA SIQUEIRA - PARQUE BURLE - JD FLAMBOYANT - PALMEIRAS
-CABO FRIO - ROTA 4 - JD ESPERANÇA - PQ ELDORADO 1 - PORTO DO CARRO - MONTE ALEGRE - MINHA CASA MINHA VIDA
-CABO FRIO - ROTA 5 - CAMINHO DE BÚZIOS - JD PERÓ - RESERVA DO PERÓ - TANGARÁ - GURIRI - PQ ELDORADO 3 - COLINAS DO PERÓ - SERRA PELADA
-CABO FRIO - ROTA 6 - PERÓ - JACARÉ - GAMBOA - OGIVA - CAJUEIRO - CAMINHO VERDE
-UNAMAR - ROTA 7 - VERÃO VERMELHO - SINAGOGA - ORLA 500 - SANTA MARGARIDA - LONG BEACH - TERRAMAR- FLORESTINHA
-UNAMAR - ROTA 8 - NOVA CALIFORNIA - SAMBURÁ - CENTRO HÍPICO - AQUARIUS
-UNAMAR - ROTA 9 - BOTAFOGO - CAMPOS NOVOS - SÃO JACINTO - ÁREA RURAL DE CABO FRIO - VILA COLONIAL
-BÚZIOS - ROTA 10 - RASA - MARIA JOAQUINA - VILA VERDE - VILA CRUZEIRO - ARPOADOR
-BÚZIOS - ROTA 11 - BAIA FORMOSA - JOSÉ GONÇALVES - CEM BRAÇAS - TUCUNS - CAPÃO
-BÚZIOS - ROTA 12 - CENTRO - MANGUINHOS - CENTRO MANGUE - GERIBÁ - FERRADURA - JOÃO FERNANDES - TARTARUGA - BRAVA - PRAIA DOS OSSOS - ORLA BARDOT
-ARRAIAL DO CABO - ROTA 13 - CENTRO - PRAIA DOS ANJOS - PRAINHA - MORRO DA COCA - PRAIA GRANDE - MACEDONIA - MORRO DA CABOCLA - CITY - VILA CANAA
-ARRAIAL DO CABO - ROTA 14 - FIGUEIRA - MONTE ALTO - NOVO ARRAIAL - PARQUE DAS GARÇAS
-ARRAIAL DO CABO - ROTA 15 - SABIA - CAIÇARA
-IGUABA - ROTA 16 - CENTRO - SOPOTÓ - PEDREIRA - ESTAÇÃO- BOA VISTA
-IGUABA - ROTA 17 - IGUABA PEQUENA - CANELAS CITY - LAGUNA AZUL - PARQUE TAMARIZ
-IGUABA - ROTA 18 - CIDADE NOVA - SÃO MIGUEL - NOVA IGUABA - UNIÃO
-IGUABA - ROTA 19 - CAPIVARA - COQUEIROS - UBAS
-IGUABA - ROTA 20 - SAPIATIBA MIRIM
-IGUABA - ROTA 21 - ARRASTÃO DAS PEDRAS - VILA NOVA 1 - IGARAPIAPUNHA
-IGUABA - ROTA 22 - MORRO DA FAZENDA - VILA NOVA 2
-IGUABA - ROTA 23 - JD SOLARES
-ARARUAMA - ROTA 24 - IGUABINHA - CENTRO IGUABINHA
-ARARUAMA - ROTA 25 - MORRO GRANDE
-ARARUAMA - ROTA 26 - NOVO HORIZONTE - PARATI
-ARARUAMA - ROTA 27 - FAZENDINHA - VILA CANAA - CLUBE DOS ENGENHEIROS
-ARARUAMA - ROTA 28 - MULTIRÃO - BOA PERNA - PARQUE MATARUNA - JD SÃO PAULO - PQ DAS ACÁCIAS
-ARARUAMA - ROTA 29 - TRÊS VENDAS - ITATIQUARA
-ARARUAMA - ROTA 30 - CENTRO - PARQUE HOTEL - PRAÇA DA BANDEIRA -MATARUNA - FONTE LIMPA - NOSSA SENHORA DE NAZARÉ
-ARARUAMA - ROTA 31 - XV DE NOVEMBRO - OUTEIRO - VIADUTO - AREAL - HOSPÍCIO - AMOR MORENO
-ARARUAMA - ROTA 32 - LAKE VIEW
-ARARUAMA - ROTA 33 - SÃO VICENTE
-ARARUAMA - ROTA 34 - PONTINHA - COQUEIRAL - VILA CAPRI
-ARARUAMA - ROTA 35 - PRAIA SECA"""
+try:
+    # --- 2. CONFIGURAÇÕES GERAIS ---
+    ARQUIVO_HISTORICO = 'historico_geral.csv'
 
-df_rotas = pd.read_csv(StringIO(csv_data), sep=";")
-
-# --- 3. INICIALIZAÇÃO DE VARIÁVEIS DE ESTADO ---
-if 'df_input' not in st.session_state:
-    st.session_state.df_input = pd.DataFrame(columns=['DATA_HORA', 'BR', 'AT', 'GAIOLA ORIGEM', 'BAIRRO CABEÇA', 'GAIOLA DESTINO', 'AT DESTINO'])
-if 'df_romaneio' not in st.session_state:
-    st.session_state.df_romaneio = None
-
-# --- 4. FUNÇÕES AUXILIARES ---
-
-def processar_bipe():
-    """Lê o código bipado, busca no Romaneio e adiciona na tabela."""
-    codigo_bipe = st.session_state.scanner_input.strip()
-    
-    if codigo_bipe:
-        at_found = ''
-        gaiola_origem_found = ''
-        bairro_found = ''
+    # --- 3. FUNÇÕES ---
+    def carregar_dados(arquivo_ou_url):
+        """Lê CSV/Excel com tratamento de erro e separador automático"""
+        if arquivo_ou_url is None: return None
         
-        # Busca no Romaneio
-        if st.session_state.df_romaneio is not None:
-            df_search = st.session_state.df_romaneio
-            # Garante que ambos sejam string para comparar
-            match = df_search[df_search['BR'].astype(str).str.strip() == codigo_bipe]
+        try:
+            # Se for link do Google Sheets
+            if isinstance(arquivo_ou_url, str) and "docs.google.com" in arquivo_ou_url:
+                url = arquivo_ou_url.replace('/edit#gid=', '/export?format=csv&gid=')
+                url = url.replace('/edit?usp=sharing', '/export?format=csv')
+                if '/edit' in url: url = url.split('/edit')[0] + '/export?format=csv'
+                return pd.read_csv(url, sep=None, engine='python')
             
-            if not match.empty:
-                try:
-                    at_found = match.iloc[0]['AT'] if 'AT' in match.columns else ''
-                    gaiola_origem_found = match.iloc[0]['GAIOLA ORIGEM'] if 'GAIOLA ORIGEM' in match.columns else ''
-                    bairro_found = match.iloc[0]['BAIRRO CABEÇA'] if 'BAIRRO CABEÇA' in match.columns else ''
-                    st.toast(f"✅ BR Encontrado: {bairro_found}")
-                except:
-                    pass
-            else:
-                st.toast("⚠️ BR não consta no Romaneio carregado.")
+            # Se for arquivo local
+            return pd.read_csv(arquivo_ou_url, sep=None, engine='python')
+        except Exception as e:
+            st.error(f"Erro ao ler arquivo: {e}")
+            return None
 
-        novo_registro = {
-            'DATA_HORA': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            'BR': codigo_bipe,
-            'AT': at_found,
-            'GAIOLA ORIGEM': gaiola_origem_found,
-            'BAIRRO CABEÇA': bairro_found,
-            'GAIOLA DESTINO': '',
-            'AT DESTINO': ''
+    def normalizar_colunas(df):
+        """Padroniza os nomes das colunas (Inglês/Português)"""
+        if df is None: return None
+        
+        # Mapa de tradução baseado nos seus arquivos
+        mapa = {
+            'SPX TN': 'BR',
+            'SPX tracking num': 'BR',
+            'Planned AT': 'AT',
+            'AT / TO': 'AT',
+            'Neighborhood': 'BAIRRO',
+            'Bairro': 'BAIRRO',
+            'Rota': 'ROTA',
+            'City': 'CIDADE',
+            'Cidade': 'CIDADE',
+            'Corridor/Cage': 'GAIOLA ORIGEM'
         }
         
-        st.session_state.df_input = pd.concat([pd.DataFrame([novo_registro]), st.session_state.df_input], ignore_index=True)
-        st.session_state.scanner_input = ""
-
-def salvar_historico():
-    if not st.session_state.df_input.empty:
-        header_mode = not os.path.exists(ARQUIVO_HISTORICO)
-        st.session_state.df_input.to_csv(ARQUIVO_HISTORICO, mode='a', header=header_mode, index=False, encoding='utf-8')
-        st.success(f"{len(st.session_state.df_input)} registros salvos no Histórico!")
-        st.session_state.df_input = pd.DataFrame(columns=['DATA_HORA', 'BR', 'AT', 'GAIOLA ORIGEM', 'BAIRRO CABEÇA', 'GAIOLA DESTINO', 'AT DESTINO'])
-    else:
-        st.warning("Tabela vazia.")
-
-# --- 5. BARRA LATERAL ---
-with st.sidebar:
-    st.title("🚛 Expedição")
-    st.markdown("---")
-    
-    # Upload do Romaneio
-    st.header("📂 1. Carregar Romaneio")
-    uploaded_file = st.file_uploader("Arquivo CSV (BR, AT, GAIOLA...)", type="csv")
-    if uploaded_file is not None:
-        try:
-            st.session_state.df_romaneio = pd.read_csv(uploaded_file, sep=";", dtype=str)
-            st.success(f"Romaneio: {len(st.session_state.df_romaneio)} volumes.")
-        except:
-            st.error("Erro no arquivo. Verifique se é CSV separado por ponto e vírgula.")
-
-    st.markdown("---")
-    
-    # Buscador
-    st.header("🔍 2. Consultar Rota")
-    termo_busca = st.text_input("Bairro ou Cidade:", "")
-    if termo_busca:
-        resultado = df_rotas[df_rotas['ROTA'].str.contains(termo_busca, case=False, na=False)]
-    else:
-        resultado = df_rotas
-    st.dataframe(resultado, hide_index=True, use_container_width=True)
-
-# --- 6. TELA PRINCIPAL & DASHBOARD ---
-
-# --- DASHBOARD SUPERIOR (Novidade!) ---
-st.markdown("### 📊 Painel de Controle em Tempo Real")
-col1, col2, col3, col4 = st.columns(4)
-
-total_bipados = len(st.session_state.df_input)
-total_meta = len(st.session_state.df_romaneio) if st.session_state.df_romaneio is not None else 0
-pendentes = total_meta - total_bipados if total_meta > 0 else 0
-
-# Calcula % apenas se tiver meta
-if total_meta > 0:
-    progresso = min(total_bipados / total_meta, 1.0)
-else:
-    progresso = 0.0
-
-col1.metric("📦 Volumes Bipados", total_bipados)
-col2.metric("🎯 Meta (Romaneio)", total_meta)
-col3.metric("⚠️ Pendentes", max(pendentes, 0))
-col4.metric("🚀 Progresso", f"{progresso*100:.1f}%")
-
-st.progress(progresso)
-st.divider()
-
-# --- ABAS DE OPERAÇÃO ---
-aba_scan, aba_pendencia, aba_historico = st.tabs(["🔫 Operação (Scan)", "⚠️ Relatório de Faltas", "🗄️ Histórico Geral"])
-
-# ABA 1: SCAN
-with aba_scan:
-    st.markdown("#### Bipagem")
-    st.text_input("Bipe aqui:", key="scanner_input", on_change=processar_bipe)
-    
-    st.markdown("#### Conferência Atual")
-    df_editado = st.data_editor(st.session_state.df_input, num_rows="dynamic", use_container_width=True, key="editor")
-    
-    st.button("✅ Consolidar Lote no Histórico", on_click=salvar_historico, type="primary")
-
-# ABA 2: RELATÓRIO DE FALTAS (Novidade!)
-with aba_pendencia:
-    st.markdown("### 🕵️ O que falta bipar?")
-    
-    if st.session_state.df_romaneio is not None:
-        # Lógica de Conjuntos para achar a diferença
-        # Converte tudo para string e remove espaços para garantir match
-        todos_brs = set(st.session_state.df_romaneio['BR'].astype(str).str.strip())
-        bipados_brs = set(st.session_state.df_input['BR'].astype(str).str.strip())
+        df_renomeado = df.rename(columns=mapa)
         
-        # Quem está no Romaneio MAS NÃO está nos Bipados
-        faltantes = todos_brs - bipados_brs
+        # Cria colunas faltantes para evitar erro
+        cols_obrigatorias = ['BR', 'AT', 'GAIOLA ORIGEM', 'BAIRRO', 'ROTA', 'CIDADE']
+        for col in cols_obrigatorias:
+            if col not in df_renomeado.columns:
+                df_renomeado[col] = ''
         
-        if len(faltantes) > 0:
-            st.error(f"Faltam {len(faltantes)} volumes do Romaneio!")
-            # Filtra o dataframe original para mostrar os detalhes dos faltantes
-            df_faltantes = st.session_state.df_romaneio[st.session_state.df_romaneio['BR'].astype(str).str.strip().isin(faltantes)]
-            st.dataframe(df_faltantes, use_container_width=True)
+        return df_renomeado
+
+    def processar_bipe():
+        if 'scanner_input' in st.session_state and st.session_state.scanner_input:
+            codigo = st.session_state.scanner_input.strip()
+            
+            dados = {'AT': '', 'GAIOLA ORIGEM': '', 'BAIRRO CABEÇA': '', 'ROTA': ''}
+            
+            # Busca na base se existir
+            if st.session_state.get('df_base_dados') is not None:
+                df = st.session_state.df_base_dados
+                match = df[df['BR'].astype(str).str.strip() == codigo]
+                if not match.empty:
+                    linha = match.iloc[0]
+                    dados['AT'] = linha.get('AT', '')
+                    dados['GAIOLA ORIGEM'] = linha.get('GAIOLA ORIGEM', '')
+                    dados['BAIRRO CABEÇA'] = linha.get('BAIRRO', '')
+                    dados['ROTA'] = linha.get('ROTA', '')
+                    st.toast(f"✅ Encontrado: {dados['BAIRRO CABEÇA']}", icon="📦")
+                else:
+                    st.toast("⚠️ BR não consta na base carregada", icon="⚠️")
+
+            novo = {
+                'DATA_HORA': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                'BR': codigo,
+                'AT': dados['AT'],
+                'GAIOLA ORIGEM': dados['GAIOLA ORIGEM'],
+                'BAIRRO CABEÇA': dados['BAIRRO CABEÇA'],
+                'ROTA': dados['ROTA'],
+                'GAIOLA DESTINO': '',
+                'AT DESTINO': ''
+            }
+            
+            # Adiciona no topo
+            st.session_state.df_input = pd.concat([pd.DataFrame([novo]), st.session_state.df_input], ignore_index=True)
+            st.session_state.scanner_input = "" 
+
+    def salvar():
+        if not st.session_state.df_input.empty:
+            hdr = not os.path.exists(ARQUIVO_HISTORICO)
+            st.session_state.df_input.to_csv(ARQUIVO_HISTORICO, mode='a', header=hdr, index=False)
+            st.success("Lote salvo no Histórico Geral!")
+            # Limpa a tela atual
+            st.session_state.df_input = st.session_state.df_input.iloc[0:0]
         else:
-            st.success("Parabéns! Tudo o que estava no Romaneio foi bipado.")
-    else:
-        st.info("Carregue um Romaneio na barra lateral para ver as pendências.")
+            st.warning("A tela está vazia, nada para salvar.")
 
-# ABA 3: HISTÓRICO
-with aba_historico:
-    st.markdown("### 🗄️ Banco de Dados Local")
-    if os.path.exists(ARQUIVO_HISTORICO):
-        df_hist = pd.read_csv(ARQUIVO_HISTORICO)
-        st.dataframe(df_hist, use_container_width=True)
-        st.download_button("📥 Baixar CSV Completo", df_hist.to_csv(index=False).encode('utf-8'), 'historico_completo.csv', 'text/csv')
-    else:
-        st.write("Ainda não há histórico salvo.")
+    # --- 4. INICIALIZAÇÃO DE ESTADO ---
+    if 'df_input' not in st.session_state:
+        st.session_state.df_input = pd.DataFrame(columns=['DATA_HORA', 'BR', 'AT', 'GAIOLA ORIGEM', 'BAIRRO CABEÇA', 'ROTA', 'GAIOLA DESTINO', 'AT DESTINO'])
+    if 'df_base_dados' not in st.session_state:
+        st.session_state.df_base_dados = None
+    if 'df_plano_rotas' not in st.session_state:
+        st.session_state.df_plano_rotas = None
+
+    # --- 5. INTERFACE ---
+    
+    # Barra Lateral
+    with st.sidebar:
+        st.title("⚙️ Arquivos")
+        
+        st.markdown("**1. Base do Scanner** (Calculation Tasks)")
+        opcao = st.radio("Fonte:", ["Arquivo CSV", "Link Google Sheets"], horizontal=True)
+        
+        df_temp = None
+        if opcao == "Arquivo CSV":
+            up = st.file_uploader("Upload Tasks", type=["csv", "txt"])
+            if up: df_temp = carregar_dados(up)
+        else:
+            link = st.text_input("Link Planilha Pública")
+            if link: df_temp = carregar_dados(link)
+            
+        if df_temp is not None:
+            st.session_state.df_base_dados = normalizar_colunas(df_temp)
+            st.success(f"Carregado: {len(df_temp)} linhas")
+
+        st.markdown("---")
+        
+        st.markdown("**2. Consultar Rotas** (Plano Expedição)")
+        up_rotas = st.file_uploader("Upload Plano", type=["csv", "txt"])
+        if up_rotas:
+            df_rotas = carregar_dados(up_rotas)
+            st.session_state.df_plano_rotas = normalizar_colunas(df_rotas)
+            st.success("Rotas Dinâmicas Ativas!")
+            
+        st.markdown("---")
+        st.header("🔍 Buscar Bairro")
+        if st.session_state.df_plano_rotas is not None:
+            tb = st.session_state.df_plano_rotas
+            q = st.text_input("Nome do Bairro/Cidade")
+            if q:
+                # Filtra Bairro OU Cidade
+                filtro = tb[tb['BAIRRO'].astype(str).str.contains(q, case=False, na=False) | 
+                            tb['CIDADE'].astype(str).str.contains(q, case=False, na=False)]
+                # Mostra colunas limpas
+                st.dataframe(filtro[['ROTA', 'BAIRRO', 'CIDADE']].drop_duplicates(), hide_index=True)
+        else:
+            st.info("Carregue o Plano de Expedição.")
+
+    # Tela Principal
+    st.title("🚛 Controle de Rota Mista")
+    
+    # KPIs
+    c1, c2, c3 = st.columns(3)
+    qtd = len(st.session_state.df_input)
+    total = len(st.session_state.df_base_dados) if st.session_state.df_base_dados is not None else 0
+    c1.metric("Bipados Agora", qtd)
+    c2.metric("Total Base", total)
+    c3.metric("Faltam", max(0, total - qtd))
+    
+    if total > 0: st.progress(qtd/total)
+
+    # Abas
+    t1, t2, t3 = st.tabs(["🔫 Operação", "⚠️ Pendências", "🗄️ Histórico"])
+    
+    with t1:
+        st.text_input("Bipe aqui (ENTER automático):", key="scanner_input", on_change=processar_bipe)
+        
+        st.markdown("### 📋 Conferência em Tempo Real")
+        # AQUI ESTÁ A MUDANÇA: height=600
+        st.data_editor(
+            st.session_state.df_input,
+            use_container_width=True,
+            num_rows="dynamic",
+            height=600,  # Aumentei a altura da caixa
+            key="editor_principal"
+        )
+        
+        st.button("💾 Salvar Lote e Limpar Tela", on_click=salvar, type="primary")
+        
+    with t2:
+        if st.session_state.df_base_dados is not None and not st.session_state.df_input.empty:
+            todos = set(st.session_state.df_base_dados['BR'].astype(str).str.strip())
+            feitos = set(st.session_state.df_input['BR'].astype(str).str.strip())
+            falta = todos - feitos
+            if falta:
+                st.error(f"Atenção: Faltam {len(falta)} volumes!")
+                ver = st.session_state.df_base_dados
+                st.dataframe(ver[ver['BR'].astype(str).str.strip().isin(falta)])
+            else:
+                st.success("Parabéns! Tudo bipado.")
+        else:
+            st.info("Carregue a base e comece a bipar.")
+            
+    with t3:
+        if os.path.exists(ARQUIVO_HISTORICO):
+            h = pd.read_csv(ARQUIVO_HISTORICO)
+            st.dataframe(h)
+            st.download_button("📥 Baixar Histórico Completo", h.to_csv(index=False).encode('utf-8'), 'historico_completo.csv')
+        else:
+            st.write("Nenhum histórico salvo ainda.")
+
+except Exception as e:
+    st.error("❌ Erro Fatal no App:")
+    st.error(e)
